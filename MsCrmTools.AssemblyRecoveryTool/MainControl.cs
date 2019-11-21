@@ -3,6 +3,8 @@ using MsCrmTools.AssemblyRecoveryTool.AppCode;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Threading;
 using System.Windows.Forms;
 using XrmToolBox.Extensibility;
 using XrmToolBox.Extensibility.Interfaces;
@@ -12,6 +14,7 @@ namespace MsCrmTools.AssemblyRecoveryTool
     public partial class MainControl : PluginControlBase, IGitHubPlugin, IHelpPlugin
     {
         private AssemblyManager manager;
+        private List<Entity> assemblies;
 
         #region Constructor
 
@@ -71,6 +74,7 @@ namespace MsCrmTools.AssemblyRecoveryTool
 
         #endregion Interfaces implementation
 
+        
         #region Events
 
         private void TsbCloseClick(object sender, EventArgs e)
@@ -121,6 +125,23 @@ namespace MsCrmTools.AssemblyRecoveryTool
             ExecuteMethod(RetrieveAssemblies);
         }
 
+        Thread searchThread;
+
+        private void tstbFilter_TextChanged(object sender, EventArgs e)
+        {
+            searchThread?.Abort();
+            searchThread = new Thread(FilterAssemblies);
+            searchThread.Start();
+        }
+
+        private void tsbClearFilter_Click(object sender, EventArgs e)
+        {
+            if (tstbFilter.Text.Length == 0) return;
+
+            tstbFilter.Text = string.Empty;
+            FilterAssemblies();
+        }
+
         #endregion Events
 
         #region Methods
@@ -138,22 +159,41 @@ namespace MsCrmTools.AssemblyRecoveryTool
                 PostWorkCallBack = e =>
                 {
                     listView_Assemblies.Items.Clear();
+                    tstbFilter.Text = string.Empty;
 
-                    var list = (List<Entity>)e.Result;
+                    assemblies = (List<Entity>)e.Result;
 
-                    foreach (Entity pAssembly in list)
-                    {
-                        var item = new ListViewItem(pAssembly.GetAttributeValue<string>("name"));
-                        item.SubItems.Add(pAssembly.GetAttributeValue<string>("version"));
-                        item.SubItems.Add(pAssembly.GetAttributeValue<string>("publickeytoken"));
-                        item.Tag = pAssembly;
-
-                        listView_Assemblies.Items.Add(item);
-                    }
+                    FilterAssemblies();
                 }
             });
         }
 
+        private void FilterAssemblies()
+        {
+            Thread.Sleep(500);
+
+            var filter = tstbFilter.Text.ToString().ToLower();
+            var list = new List<ListViewItem>();
+
+            foreach (Entity pAssembly in assemblies.Where(a => string.IsNullOrEmpty(filter) || !string.IsNullOrEmpty(filter) && a.GetAttributeValue<string>("name").ToLower().IndexOf(filter.ToLower()) >= 0))
+            {
+                var item = new ListViewItem(pAssembly.GetAttributeValue<string>("name"));
+                item.SubItems.Add(pAssembly.GetAttributeValue<string>("version"));
+                item.SubItems.Add(pAssembly.GetAttributeValue<string>("publickeytoken"));
+                item.Tag = pAssembly;
+
+                list.Add(item);
+            }
+
+            Invoke(new Action(() => {
+                listView_Assemblies.Items.Clear();
+                listView_Assemblies.Items.AddRange(list.ToArray());
+            }));
+        }
+
+
         #endregion Methods
+
+       
     }
 }
